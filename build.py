@@ -28,8 +28,27 @@ def b64(n):
     return out
 
 def sort_key(w):
-    """dictd folds case and ignores non-alphanumerics when comparing headwords."""
-    return (re.sub(r"[^a-z0-9]", "", w.lower()), w)
+    """dictd's index collation, determined experimentally.
+
+    The server binary-searches the index, so it must be sorted exactly as dictd
+    compares: fold ASCII case, drop ASCII punctuation, keep spaces, and keep
+    non-ASCII bytes untouched, comparing bytes in the C locale.
+
+    `LC_ALL=C sort -df` is close but wrong: -d drops accented letters, so
+    "Vígfússon" sorts before "Vigil" while dictd -- which keeps the UTF-8 bytes,
+    and 0xC3 > 'i' -- puts it after.  One mis-sorted neighbour makes the binary
+    search miss, and a naive key (fold case, strip everything non-alphanumeric)
+    failed 35 of 150 EB1911 lookups.
+    """
+    out = []
+    for b in w.encode("utf8"):
+        if b > 127:
+            out.append(b)
+        else:
+            c = chr(b)
+            if c.isalnum() or c == " ":
+                out.append(ord(c.lower()))
+    return bytes(out)
 
 def clean(s):
     s = s.replace("****", " ").replace("**", "")
