@@ -1,0 +1,61 @@
+#+TITLE: The Century Dictionary as a dictd database
+#+OPTIONS: toc:nil
+
+The Century Dictionary and Cyclopedia (1889–1891, William Dwight Whitney ed.) is
+arguably the finest dictionary of English ever made, and public domain. This
+builds it into a dictd database so it answers beside Webster 1913 — in Emacs,
+=H-w=.
+
+* Why this is no longer a big job
+
+The scans have been on archive.org for years, but the OCR there is rough: a
+sample from volume 5 gives =ch;u-ge=, =etticient=, =macliine-yun=, =arranKeil=,
+=sulBcient=. Building from that would be the major undertaking it always looked
+like.
+
+But [[https://github.com/hupong/century-dictionary][hupong/century-dictionary]]
+posted a structured markdown extraction in 2017 — 42 MB, headwords as =####=,
+senses one per line — and it is *complete*: 187,438 headwords, A–Z, with the
+distribution English should have (c, s, p largest). Someone did the hard part
+and left it sitting there.
+
+* Build and install
+
+#+begin_src sh
+curl -LO https://raw.githubusercontent.com/hupong/century-dictionary/master/century.md
+./build.py century.md          # -> century.dict.dz (14 MB) + century.index
+sudo bash ./install.sh         # into /usr/share/dictd, restart dictd
+#+end_src
+
+=build.py= writes dictd's native format directly, so the =dictfmt= package is not
+needed. Two things there are easy to get wrong:
+
+- *offsets* are in dictd's own base64 variant — big-endian, minimal digits, no
+  padding
+- *the index must be sorted by dictd's comparison* (case folded, non-alphanumerics
+  ignored), because the server binary-searches it. Sorted any other way, most
+  lookups silently miss.
+
+Verified by serving it unprivileged on port 2629 and resolving 200 random
+headwords: 200/200.
+
+* Testing it without root
+
+#+begin_src sh
+printf 'database century { data "%s/century.dict.dz"\n index "%s/century.index" }\n' "$PWD" "$PWD" > test.conf
+/usr/sbin/dictd -c "$PWD/test.conf" --port 2629 --pid-file "$PWD/test.pid" -L "$PWD/test.log"
+dict -h localhost -p 2629 -d century sublime
+#+end_src
+
+=-c= needs an *absolute* path: dictd chdirs before reading its config.
+
+*dictd rewrites its argv* to =dictd 1.13.0: 1/204=, so =pkill -f "dictd -c ..."=
+matches nothing and the old instance keeps the port — the new one fails to bind
+and you spend a while wondering why your rebuild changed nothing. Kill it with
+=pkill -u "$(id -un)" -x dictd=, which also leaves the system dictd alone.
+
+* Quality
+
+OCR errors from the 2017 pass remain; this is a transcription of a scan, not a
+critical edition. Glue artifacts from the bold markup are rare — three in a 4 MB
+sample — and the headword repeated at the start of the first sense is stripped.
